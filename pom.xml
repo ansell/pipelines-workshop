@@ -21,6 +21,9 @@
         <jackson.version>2.9.8</jackson.version>
         <avro.version>1.8.2</avro.version>
         <apache.beam.version>2.10.0</apache.beam.version>
+        <retrofit.version>2.5.0</retrofit.version>
+        <okhttp.version>3.11.0</okhttp.version>
+        <okio.version>2.0.0</okio.version>
 
         <!-- Logging -->
         <slf4j.version>1.7.5</slf4j.version>
@@ -186,6 +189,28 @@
             <version>${pipelines.version}</version>
         </dependency>
 
+      <!-- Http clients -->
+      <dependency>
+        <groupId>com.squareup.retrofit2</groupId>
+        <artifactId>retrofit</artifactId>
+        <version>${retrofit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.squareup.retrofit2</groupId>
+        <artifactId>converter-jackson</artifactId>
+        <version>${retrofit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.squareup.okhttp3</groupId>
+        <artifactId>okhttp</artifactId>
+        <version>${okhttp.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.squareup.okio</groupId>
+        <artifactId>okio</artifactId>
+        <version>${okio.version}</version>
+      </dependency>
+      
         <!-- Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>

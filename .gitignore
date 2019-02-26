@@ -11,3 +11,6 @@ logs
 log
 temp
 tmp
+.settings
+.classpath
+.project
