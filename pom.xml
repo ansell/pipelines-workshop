@@ -17,6 +17,13 @@
 
         <pipelines.version>2.0.24-SNAPSHOT</pipelines.version>
 
+	    <build-helper-maven.version>3.0.0</build-helper-maven.version>
+	    <maven-shade-plugin.version>3.1.1</maven-shade-plugin.version>
+	    <maven-clean-plugin.version>3.1.0</maven-clean-plugin.version>
+	    <maven-compiler-plugin.version>3.8.0</maven-compiler-plugin.version>
+	    <maven-plugin-plugin.version>3.5.2</maven-plugin-plugin.version>
+	    <maven-javadoc-plugin.version>3.0.1</maven-javadoc-plugin.version>
+
         <!-- Common libraries -->
         <jackson.version>2.9.8</jackson.version>
         <avro.version>1.8.2</avro.version>
@@ -32,10 +39,152 @@
         <!-- Plugins -->
         <maven-shade-plugin.version>3.1.1</maven-shade-plugin.version>
 
+    <!-- Checkstyle -->
+    <plexus-compiler-javac-errorprone.version>2.8.3</plexus-compiler-javac-errorprone.version>
+    <error_prone_core.version>2.3.1</error_prone_core.version>
+
+        <avro-generated-path>${project.basedir}/src/main/java-generated/</avro-generated-path>
     </properties>
 
     <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.avro</groupId>
+          <artifactId>avro-maven-plugin</artifactId>
+          <version>${avro.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.gbif.pipelines</groupId>
+          <artifactId>pipelines-maven-plugin</artifactId>
+          <version>${project.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>${maven-javadoc-plugin.version}</version>
+          <configuration>
+            <doclint>none</doclint>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>build-helper-maven-plugin</artifactId>
+          <version>${build-helper-maven.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>${maven-shade-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-clean-plugin</artifactId>
+          <version>${maven-clean-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-plugin-plugin</artifactId>
+          <version>${maven-plugin-plugin.version}</version>
+        </plugin>
+        <!-- plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${maven-compiler-plugin.version}</version>
+          <configuration>
+            <compilerId>javac-with-errorprone</compilerId>
+            <forceJavacCompilerUse>true</forceJavacCompilerUse>
+            <source>${jdkLevel}</source>
+            <target>${jdkLevel}</target>
+            <compilerArgs>
+              <arg>-XepExcludedPaths:.*/src/main/java-generated/.*</arg>
+              <arg>-XepDisableWarningsInGeneratedCode</arg>
+              <arg>-Xep:MissingOverride:ERROR</arg>
+            </compilerArgs>
+          </configuration>
+          <dependencies>
+            <dependency>
+              <groupId>org.codehaus.plexus</groupId>
+              <artifactId>plexus-compiler-javac-errorprone</artifactId>
+              <version>${plexus-compiler-javac-errorprone.version}</version>
+            </dependency>
+            <!- override plexus-compiler-javac-errorprone's dependency on
+                 Error Prone with the latest version ->
+            <dependency>
+              <groupId>com.google.errorprone</groupId>
+              <artifactId>error_prone_core</artifactId>
+              <version>${error_prone_core.version}</version>
+            </dependency>
+          </dependencies>
+        </plugin-->
+      </plugins>
+    </pluginManagement>
         <plugins>
+      <!--  Generate source from Avro definitions -->
+      <plugin>
+        <groupId>org.apache.avro</groupId>
+        <artifactId>avro-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>schemas</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>schema</goal>
+            </goals>
+            <configuration>
+              <stringType>String</stringType>
+              <sourceDirectory>${project.basedir}/src/main/avro/</sourceDirectory>
+              <outputDirectory>${avro-generated-path}</outputDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Change generated avros, add GBIF features -->
+      <!-- plugin>
+        <groupId>org.gbif.pipelines</groupId>
+        <artifactId>pipelines-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>postprocess</goal>
+            </goals>
+            <configuration>
+              <directory>${avro-generated-path}</directory>
+              <defaultPackage>org.gbif.pipelines.io.avro</defaultPackage>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin -->
+      <!-- Add the generated sources to the classpath for IDEs -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${avro-generated-path}</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Clean avro generated path -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <configuration>
+          <filesets>
+            <fileset>
+              <directory>${avro-generated-path}</directory>
+            </fileset>
+          </filesets>
+        </configuration>
+      </plugin>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
