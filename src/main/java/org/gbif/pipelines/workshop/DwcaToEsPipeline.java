@@ -30,10 +30,10 @@ import org.gbif.pipelines.workshop.avro.DataResourceRecord;
 import java.io.IOException;
 import java.nio.file.Paths;
 
-
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
+import org.apache.beam.sdk.transforms.Contextful;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
@@ -50,141 +50,124 @@ import org.slf4j.LoggerFactory;
 
 public class DwcaToEsPipeline {
 
-  private static final Logger LOG = LoggerFactory.getLogger(DwcaToEsPipeline.class);
+	private static final Logger LOG = LoggerFactory.getLogger(DwcaToEsPipeline.class);
 
-  private DwcaToEsPipeline() {}
+	private DwcaToEsPipeline() {
+	}
 
-  public static void main(String[] args) {
-    DwcaPipelineOptions options = PipelinesOptionsFactory.create(DwcaPipelineOptions.class, args);
-    run(options);
-  }
+	public static void main(String[] args) {
+		DwcaPipelineOptions options = PipelinesOptionsFactory.create(DwcaPipelineOptions.class, args);
+		run(options);
+	}
 
-  public static void run(DwcaPipelineOptions options) {
+	public static void run(DwcaPipelineOptions options) {
 
-    EsIndexUtils.createIndex(options);
+		EsIndexUtils.createIndex(options);
 
-    LOG.info("Adding step 1: Options");
+		LOG.info("Adding step 1: Options");
 
-    KvConfig kvConfig = KvConfigFactory.create(options.getGbifApiUrl());
+		KvConfig kvConfig = KvConfigFactory.create(options.getGbifApiUrl());
 
-    final TupleTag<ExtendedRecord> erTag = new TupleTag<ExtendedRecord>() {};
-    final TupleTag<BasicRecord> brTag = new TupleTag<BasicRecord>() {};
-    final TupleTag<TemporalRecord> trTag = new TupleTag<TemporalRecord>() {};
-    final TupleTag<LocationRecord> lrTag = new TupleTag<LocationRecord>() {};
-    final TupleTag<TaxonRecord> txrTag = new TupleTag<TaxonRecord>() {};
-    final TupleTag<MultimediaRecord> mrTag = new TupleTag<MultimediaRecord>() {};
+		final TupleTag<ExtendedRecord> erTag = new TupleTag<ExtendedRecord>() {
+		};
+		final TupleTag<BasicRecord> brTag = new TupleTag<BasicRecord>() {
+		};
+		final TupleTag<TemporalRecord> trTag = new TupleTag<TemporalRecord>() {
+		};
+		final TupleTag<LocationRecord> lrTag = new TupleTag<LocationRecord>() {
+		};
+		final TupleTag<TaxonRecord> txrTag = new TupleTag<TaxonRecord>() {
+		};
+		final TupleTag<MultimediaRecord> mrTag = new TupleTag<MultimediaRecord>() {
+		};
 
-    String tmpDir = FsUtils.getTempDir(options);
+		String tmpDir = FsUtils.getTempDir(options);
 
-    String inputPath = options.getInputPath();
-    boolean isDirectory = Paths.get(inputPath).toFile().isDirectory();
+		String inputPath = options.getInputPath();
+		boolean isDirectory = Paths.get(inputPath).toFile().isDirectory();
 
-    DwcaIO.Read reader =
-        isDirectory
-            ? DwcaIO.Read.fromLocation(inputPath)
-            : DwcaIO.Read.fromCompressed(inputPath, tmpDir);
+		DwcaIO.Read reader = isDirectory ? DwcaIO.Read.fromLocation(inputPath)
+				: DwcaIO.Read.fromCompressed(inputPath, tmpDir);
 
-    Pipeline p = Pipeline.create(options);
+		Pipeline p = Pipeline.create(options);
 
-    LOG.info("Reading avro files");
+		LOG.info("Reading avro files");
 
-    PCollectionView<DataResourceRecord> metadataView =
-        p.apply("Create metadata collection", Create.of(options.getDatasetId()))
-            .apply("Interpret metadata", ParDo.of(new DoFn<String, DataResourceRecord>() {
-                    DataResourceService dataResourceService = ClientFactory.createRetrofitClient("https://collections.ala.org.au/ws/",DataResourceService.class);
-            }))
-            .apply("Convert to view", View.asSingleton());
+		PCollectionView<DataResourceRecord> metadataView = p
+				.apply("Create metadata collection", Create.of(options.getDatasetId()))
+				.apply("Interpret metadata", ParDo.of(new DataResourceDoFn()))
+				.apply("Convert to view", View.asSingleton());
 
-    PCollection<ExtendedRecord> uniqueRecords =
-        p.apply("Read ExtendedRecords", reader)
-            .apply("Filter duplicates", UniqueIdTransform.create());
+		PCollection<ExtendedRecord> uniqueRecords = p.apply("Read ExtendedRecords", reader).apply("Filter duplicates",
+				UniqueIdTransform.create());
 
-    PCollection<KV<String, ExtendedRecord>> verbatimCollection =
-        uniqueRecords.apply("Map Verbatim to KV", VerbatimTransform.toKv());
+		PCollection<KV<String, ExtendedRecord>> verbatimCollection = uniqueRecords.apply("Map Verbatim to KV",
+				VerbatimTransform.toKv());
 
-    PCollection<KV<String, BasicRecord>> basicCollection =
-        uniqueRecords
-            .apply("Interpret basic", ParDo.of(new BasicTransform.Interpreter()))
-            .apply("Map Basic to KV", BasicTransform.toKv());
+		PCollection<KV<String, BasicRecord>> basicCollection = uniqueRecords
+				.apply("Interpret basic", ParDo.of(new BasicTransform.Interpreter()))
+				.apply("Map Basic to KV", BasicTransform.toKv());
 
-    PCollection<KV<String, TemporalRecord>> temporalCollection =
-        uniqueRecords
-            .apply("Interpret temporal", ParDo.of(new TemporalTransform.Interpreter()))
-            .apply("Map Temporal to KV", TemporalTransform.toKv());
+		PCollection<KV<String, TemporalRecord>> temporalCollection = uniqueRecords
+				.apply("Interpret temporal", ParDo.of(new TemporalTransform.Interpreter()))
+				.apply("Map Temporal to KV", TemporalTransform.toKv());
 
+		PCollection<KV<String, LocationRecord>> locationCollection = uniqueRecords
+				.apply("Interpret location", ParDo.of(new LocationTransform.Interpreter(kvConfig)))
+				.apply("Map Location to KV", LocationTransform.toKv());
 
-    PCollection<KV<String, LocationRecord>> locationCollection =
-        uniqueRecords
-            .apply("Interpret location", ParDo.of(new LocationTransform.Interpreter(kvConfig)))
-            .apply("Map Location to KV", LocationTransform.toKv());
+		PCollection<KV<String, TaxonRecord>> taxonCollection = uniqueRecords
+				.apply("Interpret taxonomy", ParDo.of(new TaxonomyTransform.Interpreter(kvConfig)))
+				.apply("Map Taxon to KV", TaxonomyTransform.toKv());
 
+		PCollection<KV<String, MultimediaRecord>> multimediaCollection = uniqueRecords
+				.apply("Interpret multimedia", ParDo.of(new MultimediaTransform.Interpreter()))
+				.apply("Map Multimedia to KV", MultimediaTransform.toKv());
 
-    PCollection<KV<String, TaxonRecord>> taxonCollection =
-        uniqueRecords
-            .apply("Interpret taxonomy", ParDo.of(new TaxonomyTransform.Interpreter(kvConfig)))
-            .apply("Map Taxon to KV", TaxonomyTransform.toKv());
+		LOG.info("Adding step 3: Converting to a json object");
+		DoFn<KV<String, CoGbkResult>, String> doFn = new DoFn<KV<String, CoGbkResult>, String>() {
 
-    PCollection<KV<String, MultimediaRecord>> multimediaCollection =
-        uniqueRecords
-            .apply("Interpret multimedia", ParDo.of(new MultimediaTransform.Interpreter()))
-            .apply("Map Multimedia to KV", MultimediaTransform.toKv());
+			@ProcessElement
+			public void processElement(ProcessContext c) {
+				CoGbkResult v = c.element().getValue();
+				String k = c.element().getKey();
 
+				DataResourceRecord drr = c.sideInput(metadataView);
+				ExtendedRecord er = v.getOnly(erTag, ExtendedRecord.newBuilder().setId(k).build());
+				BasicRecord br = v.getOnly(brTag, BasicRecord.newBuilder().setId(k).build());
+				TemporalRecord tr = v.getOnly(trTag, TemporalRecord.newBuilder().setId(k).build());
+				LocationRecord lr = v.getOnly(lrTag, LocationRecord.newBuilder().setId(k).build());
+				TaxonRecord txr = v.getOnly(txrTag, TaxonRecord.newBuilder().setId(k).build());
+				MultimediaRecord mr = v.getOnly(mrTag, MultimediaRecord.newBuilder().setId(k).build());
 
+				String json = GbifJsonConverter.create(drr, br, tr, lr, txr, mr, er).buildJson().toString();
 
+				c.output(json);
 
-    LOG.info("Adding step 3: Converting to a json object");
-    DoFn<KV<String, CoGbkResult>, String> doFn =
-        new DoFn<KV<String, CoGbkResult>, String>() {
+			}
+		};
 
+		LOG.info("Adding step 4: Converting to a json object");
+		PCollection<String> jsonCollection = KeyedPCollectionTuple.of(brTag, basicCollection)
+				.and(trTag, temporalCollection).and(lrTag, locationCollection).and(txrTag, taxonCollection)
+				.and(mrTag, multimediaCollection).and(erTag, verbatimCollection)
+				.apply("Grouping objects", CoGroupByKey.create())
+				.apply("Merging to json", ParDo.of(doFn).withSideInputs(metadataView));
 
-          @ProcessElement
-          public void processElement(ProcessContext c) {
-            CoGbkResult v = c.element().getValue();
-            String k = c.element().getKey();
+		LOG.info("Adding step 5: Elasticsearch indexing");
+		ElasticsearchIO.ConnectionConfiguration esConfig = ElasticsearchIO.ConnectionConfiguration
+				.create(options.getEsHosts(), options.getEsIndexName(), Indexing.INDEX_TYPE);
 
-            ExtendedRecord er = v.getOnly(erTag, ExtendedRecord.newBuilder().setId(k).build());
-            BasicRecord br = v.getOnly(brTag, BasicRecord.newBuilder().setId(k).build());
-            TemporalRecord tr = v.getOnly(trTag, TemporalRecord.newBuilder().setId(k).build());
-            LocationRecord lr = v.getOnly(lrTag, LocationRecord.newBuilder().setId(k).build());
-            TaxonRecord txr = v.getOnly(txrTag, TaxonRecord.newBuilder().setId(k).build());
-            MultimediaRecord mr = v.getOnly(mrTag, MultimediaRecord.newBuilder().setId(k).build());
+		jsonCollection.apply(ElasticsearchIO.write().withConnectionConfiguration(esConfig)
+				.withMaxBatchSizeBytes(options.getEsMaxBatchSizeBytes()).withMaxBatchSize(options.getEsMaxBatchSize())
+				.withIdFn(input -> input.get("id").asText()));
 
-            String json = GbifJsonConverter.create(br, tr, lr, txr, mr, er).buildJson().toString();
+		LOG.info("Running the pipeline");
+		PipelineResult result = p.run();
+		result.waitUntilFinish();
 
-            c.output(json);
+		LOG.info("Pipeline has been finished");
 
-          }
-        };
-
-    LOG.info("Adding step 4: Converting to a json object");
-    PCollection<String> jsonCollection =
-        KeyedPCollectionTuple.of(brTag, basicCollection)
-            .and(trTag, temporalCollection)
-            .and(lrTag, locationCollection)
-            .and(txrTag, taxonCollection)
-            .and(mrTag, multimediaCollection)
-            .and(erTag, verbatimCollection)
-            .apply("Grouping objects", CoGroupByKey.create())
-            .apply("Merging to json", ParDo.of(doFn));
-
-    LOG.info("Adding step 5: Elasticsearch indexing");
-    ElasticsearchIO.ConnectionConfiguration esConfig =
-        ElasticsearchIO.ConnectionConfiguration.create(
-            options.getEsHosts(), options.getEsIndexName(), Indexing.INDEX_TYPE);
-
-    jsonCollection.apply(
-        ElasticsearchIO.write()
-            .withConnectionConfiguration(esConfig)
-            .withMaxBatchSizeBytes(options.getEsMaxBatchSizeBytes())
-            .withMaxBatchSize(options.getEsMaxBatchSize())
-            .withIdFn(input -> input.get("id").asText()));
-
-    LOG.info("Running the pipeline");
-    PipelineResult result = p.run();
-    result.waitUntilFinish();
-
-    LOG.info("Pipeline has been finished");
-
-    FsUtils.removeTmpDirectory(options);
-  }
+		FsUtils.removeTmpDirectory(options);
+	}
 }
